@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>analog player</title>
+<style>
+:root {
+  --gold: #ddbb72;
+  --pale: #f7dfa1;
+  --brass: #bb8e43;
+  --ink: #291b0b;
+  --w: 844px;
+  --h: 802px;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+body { font-family: Georgia, 'Times New Roman', serif; }
+#viewport { position: relative; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#radio {
+  position: absolute;
+  top: 50%; left: 50%; width: 844px; height: 802px;
+  transform-origin: center; color: var(--pale);
+  user-select: none; -webkit-user-select: none;
+}
+#shell { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+button { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible, [role="slider"]:focus-visible {
+  outline: 2px solid #ffdc88; outline-offset: 3px;
+}
+/* Small circular pilot lamp, placed into the radio's original golden medallion */
+#pilot {
+  position: absolute; left: 402px; top: 250px; width: 17px; height: 17px;
+  border: 0; border-radius: 50%; background: radial-gradient(circle at 45% 40%, #8f682f, #311e0c 70%);
+  cursor: pointer; box-shadow: inset 0 1px 2px #0a0706, 0 0 1px #e3bf6e;
+}
+#radio.is-playing #pilot {
+  background: radial-gradient(circle at 40% 36%, #fff5d1, #e7b44b 34%, #92602b 68%, #26180e 85%);
+  box-shadow: 0 0 8px #e4b961, 0 0 16px #eec27477, inset 0 0 1px #fff;
+}
+#radio.power-off #pilot { opacity: .48; }
+/* The right-edge vertical switch in its real, physical slot */
+#power {
+  position: absolute; left: 714px; top: 284px; width: 35px; height: 98px;
+  border: none; background: none; cursor: pointer; padding: 0;
+}
+#power::before {
+  content: ''; position: absolute; width: 12px; height: 18px; left: 12px; top: 39px;
+  border-radius: 4px; background: linear-gradient(90deg,#66491d,#e8c56b 39%,#9b732e 70%,#38240c);
+  box-shadow: inset 1px 0 #fbe19b77, 0 2px 2px #090804;
+  transition: transform .17s ease;
+}
+#radio.power-off #power::before { transform: translateY(13px); }
+#power:hover::before { filter: brightness(1.2); }
+/* Brass control row already painted on the original image. Click targets fit its four keys exactly. */
+.key {
+  position:absolute; top:644px; height:34px; width:49px;
+  border:0; border-radius:4px; background: transparent; padding:0; cursor:pointer;
+  display:grid; place-items:center; color:#3d2c11;
+  text-shadow: 0 1px 0 #eac57799, 0 -1px 0 #160d04aa;
+}
+.key svg { display:block; width:20px; height:20px; fill:currentColor; filter: drop-shadow(0 1px 0 #edca78aa); }
+.key:hover { background: #ffe7a91e; }
+.key:active, .key.pressing { transform: translateY(2px); box-shadow: inset 0 3px 5px #1c120e77; }
+.key.active { background: #ffe7a922; }
+#back { left:307px; } #play { left:357px; } #next { left:408px; } #list { left:458px; }
+#play svg { width:23px; height:23px; }
+/* Metal knobs: no replacement buttons drawn; we keep the engraved knobs and add only a tiny moving indicator */
+.dial {
+  position:absolute; width:77px; height:77px; border:0; border-radius:50%; background:transparent;
+  padding:0; cursor:grab; touch-action:none;
+}
+.dial:active, .dial.dragging { cursor:grabbing; }
+.dial::after {
+  content:''; position:absolute; left:calc(50% - 1px); top:13px;
+  width:2px; height:8px; border-radius:2px; background: #fff0b4;
+  box-shadow: 0 0 1px #6e461c, 0 1px 2px #2e1a06;
+  transform-origin: 1px 26px; transform:rotate(var(--rotation, 0deg));
+  opacity:.83; pointer-events:none;
+}
+#volumeDial { left:119px; top:575px; }
+#tuneDial { left:603px; top:575px; }
+/* The three little original knobs: mute, random, loop */
+.mini {
+  position:absolute; width:45px; height:45px; border:0; padding:0;
+  background:transparent; border-radius:50%; cursor:pointer;
+}
+.mini::after { content:''; position:absolute; inset:7px; border-radius:50%; border:1px solid transparent; transition: .16s ease; }
+.mini:hover::after { border-color:#ffe6a964; }
+.mini.selected::after { box-shadow:0 0 0 3px #ffd17822, 0 0 11px #ffc36599; border-color:#f7d27d66; }
+#mute { left:383px; top:470px; }
+#shuffle { left:703px; top:471px; }
+#repeat { left:700px; top:537px; }
+/* The former waveband window is now the screen for title, progress and playlist. */
+#display {
+  position:absolute; left:249px; top:541px; width:314px; height:101px;
+  padding:5px 9px 7px; border-radius:11px;
+  background: linear-gradient(135deg,#211806f2,#1f1a0cd6 50%,#181607ed);
+  border: 1px solid #9c783840;
+  box-shadow: inset 0 2px 10px #0009, inset 0 0 0 1px #d6aa5a0e;
+  overflow:hidden; text-align:center;
+  color:#ead4a0; text-shadow:0 1px 2px #000;
+}
+#display::after {
+  content:''; position:absolute; inset:0; border-radius:11px; pointer-events:none;
+  background: linear-gradient(155deg,#fff3c10e 0,transparent 36%, #8a652016 63%, transparent 86%);
+}
+#displayTop {
+  display:flex; justify-content:space-between; align-items:center;
+  color:#c1a66d; font: 9px/1.1 Georgia,serif; letter-spacing:1.5px;
+  margin:1px 1px 4px; text-transform:uppercase;
+}
+#liveBadge { color:#f0c77e; }
+#song {
+  font:15px/19px Georgia,'Times New Roman',serif; letter-spacing:.15px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  color:var(--pale); padding:0 1px; height:20px;
+}
+#trackBottom { display:flex; justify-content:space-between; gap:8px; align-items:center; margin:5px 1px 0; }
+.time { font:10px/14px ui-monospace,Consolas,monospace; color:#bda878; font-variant-numeric:tabular-nums; }
+#seek { appearance:none; -webkit-appearance:none; display:block; min-width:0; flex:1; margin:0;
+  height:14px; background:transparent; cursor:ew-resize; --p:0%; }
+#seek::-webkit-slider-runnable-track { height:3px; border-radius:3px; background:linear-gradient(90deg,#f0d18e 0 var(--p),#685333 var(--p) 100%); }
+#seek::-moz-range-track { height:3px; background:#685333; }
+#seek::-moz-range-progress { height:3px; background:#f0d18e; }
+#seek::-webkit-slider-thumb { -webkit-appearance:none; width:9px; height:9px; margin-top:-3px; border-radius:50%; background:#eccc8c; border:1px solid #6e4a21; }
+#seek::-moz-range-thumb { width:9px;height:9px;border-radius:50%;background:#eccc8c;border:1px solid #6e4a21; }
+#hints { display:flex; align-items:center; justify-content:center; gap:9px; font-size:9px; color:#a58b5c; margin-top:3px; letter-spacing:.3px; }
+#message { position:absolute; left:6px; right:6px; bottom:4px; background:#211808f0; font:10px/12px Georgia,serif; color:#ffe0aa; padding:3px 3px; z-index:2; }
+/* The track list replaces the same tiny window, not a floating dialog. */
+#playlist { position:absolute; inset:0; padding:5px 9px 5px; overflow-y:auto; overscroll-behavior:contain;
+  scrollbar-width:thin; scrollbar-color:#b99c5a #282010; background:linear-gradient(135deg,#261b0af5,#181306f3); }
+#playlist::-webkit-scrollbar { width:4px; } #playlist::-webkit-scrollbar-thumb { background:#b99c5a; }
+.playlist-heading { text-align:left; font:9px/15px Georgia,serif; letter-spacing:2px; color:#c6a766; margin-bottom:2px; position:sticky; top:0; background:#251a0a; }
+.track { width:100%; padding:3px 2px; border:0; border-bottom:1px solid #bd985c22; text-align:left;
+  background:transparent; color:#cbb78d; display:flex; align-items:center; gap:7px;
+  cursor:pointer; font:11px/16px Georgia,serif; }
+.track:hover,.track.selected { color:#ffe2a5; background:#bc914a20; }
+.track-no { font:10px ui-monospace,monospace; color:#907647; min-width:20px; }
+.track-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.track-indicator { font-size:9px; min-width:12px; }
+/* Subtle indicator-light response within the VU glass, not an off-theme visualizer. */
+.meter-glow { position:absolute; width:161px; height:90px; top:331px; pointer-events:none; border-radius:45%;
+  background:radial-gradient(ellipse at 60% 55%,#ffce7230,transparent 66%); opacity:var(--intensity,.04); mix-blend-mode:screen; }
+#meterL { left:170px; } #meterR { left:491px; }
+#radio.power-off #display { filter:brightness(.32); }
+#radio.power-off .meter-glow { opacity:0; }
+#radio.power-off #song { color:#8c8064; }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; } }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <main id="radio" aria-label="Maggie's Wireless — музыкальный проигрыватель">
+    <img id="shell" src="./radio.webp" alt="" draggable="false">
+    <span class="meter-glow" id="meterL" aria-hidden="true"></span>
+    <span class="meter-glow" id="meterR" aria-hidden="true"></span>
+    <button id="pilot" type="button" aria-label="Воспроизвести или приостановить" title="Индикатор / пауза"></button>
+    <button id="power" type="button" aria-label="Выключить радио" aria-pressed="true" title="Включить / выключить"></button>
+    <button class="mini" id="mute" type="button" aria-label="Выключить звук" aria-pressed="false" title="Приглушить звук"></button>
+    <button class="mini" id="shuffle" type="button" aria-label="Случайный порядок" aria-pressed="false" title="Случайный порядок"></button>
+    <button class="mini" id="repeat" type="button" aria-label="Повторить текущую песню" aria-pressed="false" title="Повтор песни"></button>
+    <div id="display" aria-label="Экран радиоприемника">
+      <div id="nowPlaying">
+        <div id="displayTop"><span>MAGGIE'S WIRELESS</span><span id="liveBadge">01 / 08</span></div>
+        <div id="song" title="">Трек не выбран</div>
+        <div id="trackBottom">
+          <span class="time" id="currentTime">0:00</span>
+          <input id="seek" type="range" min="0" max="100" step=".1" value="0" aria-label="Перемотка песни">
+          <span class="time" id="duration">0:00</span>
+        </div>
+        <div id="hints"><span>ЛЕВАЯ: ГРОМКОСТЬ</span><span>ПРАВАЯ: ПЕРЕМОТКА</span></div>
+      </div>
+      <div id="playlist" hidden aria-label="Список песен">
+        <div class="playlist-heading">ПЛЕЙЛИСТ</div>
+        <div id="trackEntries"></div>
+      </div>
+      <div id="message" role="status" hidden></div>
+    </div>
+    <button class="dial" id="volumeDial" type="button" aria-label="Громкость" title="Громкость: вращай, тяни или прокручивай колесиком"></button>
+    <button class="dial" id="tuneDial" type="button" aria-label="Перемотка" title="Перемотка: тяни или прокручивай колесиком"></button>
+    <button class="key" id="back" type="button" aria-label="Предыдущая песня" title="Предыдущая песня">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h2v14H4zM17 5v14l-9-7zM21 5v14l-9-7z" /></svg>
+    </button>
+    <button class="key" id="play" type="button" aria-label="Воспроизвести" title="Воспроизвести">
+      <svg id="playSymbol" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4v16l13-8z"/></svg>
+    </button>
+    <button class="key" id="next" type="button" aria-label="Следующая песня" title="Следующая песня">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5h2v14h-2zM3 5v14l9-7zM10 5v14l9-7z" /></svg>
+    </button>
+    <button class="key" id="list" type="button" aria-label="Открыть плейлист" aria-expanded="false" title="Плейлист">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h15v2H4zM4 11h15v2H4zM4 17h10v2H4z" /></svg>
+    </button>
+  </main>
+</div>
+<audio id="audio" preload="metadata"></audio>
+<script>
+'use strict';
+
+const TRACKS = [
+  { artist: "TAKE ME BACK TO YOU", url: "./1.mp3" },
+  { artist: "I HEARD I HAD", url: "./2.mp3" },
+  { artist: "WHAT'S LEFT IN THE RIVER", url: "./3.mp3" },
+  { artist: "WHERE ALL PATHS ALIGN", url: "./4.mp3" },
+  { artist: "500 MILES", url: "./5.mp3" },
+  { artist: "RESET", url: "./6.mp3" }
+];
+
+const LOOP_PLAYLIST = true;
+const WIDTH = 844, HEIGHT = 802;
+const $ = id => document.getElementById(id);
+const viewport = $('viewport'), radio = $('radio'), audio = $('audio');
+const song = $('song'), display = $('display'), seek = $('seek');
+const play = $('play'), playSymbol = $('playSymbol'), list = $('list');
+const volumeDial = $('volumeDial'), tuneDial = $('tuneDial');
+const clamp = (v,a,b) => Math.min(b, Math.max(a,v));
+let currentIndex=0, volume=.78, muted=false, powerOn=true;
+let shuffleOn=false, repeatOn=false, playlistOpen=false, loadVersion=0;
+let volumeBeforeMute=.78, statusTimer=null, analyser=null, audioContext=null, sourceNode=null;
+let meterFrame=0, lastGlow=0, requestedPlayback=false;
+
+function fit() {
+  const scale = Math.min(viewport.clientWidth/WIDTH, viewport.clientHeight/HEIGHT);
+  radio.style.transform = `translate(-50%, -50%) scale(${scale})`;
+}
+window.addEventListener('resize',fit);
+if ('ResizeObserver' in window) new ResizeObserver(fit).observe(viewport);
+fit();
+
+function formatTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  return Math.floor(seconds/60)+':'+String(Math.floor(seconds%60)).padStart(2,'0');
+}
+function status(msg) {
+  clearTimeout(statusTimer);
+  $('message').textContent=msg;
+  $('message').hidden=!msg;
+  if(msg) statusTimer=setTimeout(()=>{$('message').hidden=true},3200);
+}
+function refreshSeek() {
+  const duration=audio.duration;
+  const progress=Number.isFinite(duration)&&duration>0 ? clamp(audio.currentTime/duration*100,0,100) : 0;
+  seek.value=progress;
+  seek.style.setProperty('--p',progress+'%');
+  $('currentTime').textContent=formatTime(audio.currentTime);
+  $('duration').textContent=formatTime(duration);
+  tuneDial.style.setProperty('--rotation', (-128+progress*2.56)+'deg');
+}
+function setVolume(value) {
+  volume=clamp(value,0,1);
+  if(volume>0) muted=false;
+  audio.volume=volume;
+  audio.muted=muted || volume<=0;
+  $('mute').classList.toggle('selected',audio.muted);
+  $('mute').setAttribute('aria-pressed',String(audio.muted));
+  $('mute').title=audio.muted?'Включить звук':`Приглушить звук (${Math.round(volume*100)}%)`;
+  volumeDial.style.setProperty('--rotation',(-135+volume*270)+'deg');
+  volumeDial.setAttribute('aria-label',`Громкость ${Math.round(volume*100)}%`);
+}
+function setPlaylistOpen(open) {
+  if(open && !powerOn) return;
+  playlistOpen=Boolean(open);
+  $('playlist').hidden=!playlistOpen;
+  $('nowPlaying').hidden=playlistOpen;
+  list.classList.toggle('active',playlistOpen);
+  list.setAttribute('aria-expanded',String(playlistOpen));
+  list.setAttribute('aria-label',playlistOpen?'Закрыть плейлист':'Открыть плейлист');
+  status('');
+}
+function renderList() {
+  const holder=$('trackEntries');holder.replaceChildren();
+  TRACKS.forEach((track,i)=>{
+    const button=document.createElement('button');
+    button.type='button';button.className='track';button.title=track.artist;
+    const no=document.createElement('span'),name=document.createElement('span'),symbol=document.createElement('span');
+    no.className='track-no';no.textContent=String(i+1).padStart(2,'0');
+    name.className='track-name';name.textContent=track.artist;
+    symbol.className='track-indicator';
+    button.append(no,name,symbol);
+    button.addEventListener('click',()=>{loadTrack(i,true);setPlaylistOpen(false)});
+    holder.appendChild(button);
+  });
+  syncList();
+}
+function syncList() {
+  [...$('trackEntries').children].forEach((btn,i)=>{
+    const active=i===currentIndex;
+    btn.classList.toggle('selected',active);
+    btn.querySelector('.track-indicator').textContent=active?(audio.paused?'◆':'▶'):'';
+    btn.setAttribute('aria-current',active?'true':'false');
+  });
+}
+function setPower(on) {
+  powerOn=Boolean(on);
+  radio.classList.toggle('power-off',!powerOn);
+  $('power').setAttribute('aria-pressed',String(powerOn));
+  $('power').setAttribute('aria-label',powerOn?'Выключить радио':'Включить радио');
+  $('power').title=powerOn?'Выключить':'Включить';
+  if(!powerOn) { audio.pause(); setPlaylistOpen(false); }
+  syncPlay();
+}
+function syncPlay() {
+  const playing=powerOn&&!audio.paused;
+  radio.classList.toggle('is-playing',playing);
+  playSymbol.innerHTML=playing?'<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>':'<path d="M8 4v16l13-8z"/>';
+  play.setAttribute('aria-label',playing?'Пауза':'Воспроизвести');
+  play.title=playing?'Пауза':'Воспроизвести';
+  play.classList.toggle('active',playing);
+  syncList();
+}
+async function ensureAnalyser() {
+  if(audioContext || !window.AudioContext) return;
+  try {
+    audioContext=new AudioContext();
+    sourceNode=audioContext.createMediaElementSource(audio);
+    analyser=audioContext.createAnalyser();analyser.fftSize=256;
+    sourceNode.connect(analyser);analyser.connect(audioContext.destination);
+  } catch(e) { analyser=null; }
+}
+function meterLoop() {
+  cancelAnimationFrame(meterFrame);
+  const values=new Uint8Array(128);
+  function frame(){
+    if(analyser && powerOn && !audio.paused) {
+      analyser.getByteFrequencyData(values);
+      const average=values.reduce((a,b)=>a+b,0)/values.length/255;
+      const goal=Math.min(.65,.1+average*.6);
+      lastGlow=lastGlow*.85+goal*.15;
+    } else lastGlow*=.88;
+    $('meterL').style.setProperty('--intensity',String(lastGlow));
+    $('meterR').style.setProperty('--intensity',String(lastGlow*.9));
+    meterFrame=requestAnimationFrame(frame);
+  }
+  frame();
+}
+async function playAudio(version=loadVersion) {
+  requestedPlayback=true;
+  if(!powerOn) {status('Сначала включи радио');return;}
+  if(!TRACKS.length) {status('Добавь песни в TRACKS');return;}
+  await ensureAnalyser();
+  if(audioContext?.state==='suspended') await audioContext.resume().catch(()=>{});
+  try { await audio.play(); if(version===loadVersion)status(''); }
+  catch(e) {
+    if(version!==loadVersion || e.name==='AbortError')return;
+    status(e.name==='NotAllowedError'?'Нажми ▶ для запуска':'Проверь ссылку на аудиофайл');
+    syncPlay();
+  }
+}
+function loadTrack(index,autoplay=false) {
+  if(!TRACKS.length)return;
+  const version=++loadVersion;
+  requestedPlayback=false;
+  currentIndex=clamp(index,0,TRACKS.length-1);
+  audio.pause();
+  audio.src=TRACKS[currentIndex].url;
+  song.textContent=TRACKS[currentIndex].artist;
+  song.title=TRACKS[currentIndex].artist;
+  $('liveBadge').textContent=String(currentIndex+1).padStart(2,'0')+' / '+String(TRACKS.length).padStart(2,'0');
+  refreshSeek();syncPlay();status('');
+  audio.load();
+  if(autoplay) playAudio(version);
+}
+function pickRandomIndex() {
+  if(TRACKS.length<2)return currentIndex;
+  let n;do {n=Math.floor(Math.random()*TRACKS.length)}while(n===currentIndex);
+  return n;
+}
+function nextTrack(auto=true) {
+  if(!TRACKS.length || !powerOn)return;
+  if(shuffleOn)loadTrack(pickRandomIndex(),auto);
+  else if(currentIndex<TRACKS.length-1)loadTrack(currentIndex+1,auto);
+  else if(LOOP_PLAYLIST)loadTrack(0,auto);
+}
+function previousTrack() {
+  if(!TRACKS.length || !powerOn)return;
+  if(audio.currentTime>3) {audio.currentTime=0;refreshSeek();return;}
+  if(shuffleOn) loadTrack(pickRandomIndex(),true);
+  else if(currentIndex>0) loadTrack(currentIndex-1,true);
+  else if(LOOP_PLAYLIST) loadTrack(TRACKS.length-1,true);
+  else {audio.currentTime=0;refreshSeek();}
+}
+function togglePlay() {
+  if(!powerOn) {status('Сначала включи радио');return;}
+  if(audio.paused)playAudio();else audio.pause();
+}
+function setSeekPercent(v) {
+  if(!powerOn)return;
+  if(Number.isFinite(audio.duration)&&audio.duration>0) {
+    audio.currentTime=clamp(v,0,100)/100*audio.duration;
+    refreshSeek();
+  }
+}
+function moveSeek(seconds) {
+  if(Number.isFinite(audio.duration)&&audio.duration>0)
+    {audio.currentTime=clamp(audio.currentTime+seconds,0,audio.duration);refreshSeek();}
+}
+/* Both real-world brass dials respond to dragging and mousewheel. */
+function wireDial(element,kind) {
+  let drag=null;
+  element.addEventListener('pointerdown',e=>{
+    if(e.button!==0 || !powerOn)return;
+    drag={x:e.clientX,y:e.clientY,vol:volume,time:audio.currentTime};
+    element.setPointerCapture(e.pointerId);
+    element.classList.add('dragging');
+    e.preventDefault();
+  });
+  element.addEventListener('pointermove',e=>{
+    if(!drag || !powerOn)return;
+    const dx=e.clientX-drag.x,dy=drag.y-e.clientY;
+    const cssScale=radio.getBoundingClientRect().width/WIDTH;
+    const movement=(dx+dy)*.008/Math.max(cssScale,.1);
+    if(kind==='volume')setVolume(drag.vol+movement);
+    else if(Number.isFinite(audio.duration)&&audio.duration>0) {
+      audio.currentTime=clamp(drag.time+movement*audio.duration/2,0,audio.duration);
+      refreshSeek();
+    }
+  });
+  function clear(){drag=null;element.classList.remove('dragging');}
+  element.addEventListener('pointerup',clear);
+  element.addEventListener('pointercancel',clear);
+  element.addEventListener('lostpointercapture',clear);
+  element.addEventListener('wheel',e=>{
+    if(!powerOn)return;e.preventDefault();
+    if(kind==='volume')setVolume(volume+(e.deltaY<0?.04:-.04));
+    else moveSeek(e.deltaY<0?5:-5);
+  },{passive:false});
+  element.addEventListener('keydown',e=>{
+    if(!powerOn)return;
+    if(['ArrowUp','ArrowRight','ArrowDown','ArrowLeft'].includes(e.key)) {
+      e.preventDefault();const dir=(e.key==='ArrowUp'||e.key==='ArrowRight')?1:-1;
+      if(kind==='volume')setVolume(volume+dir*.05);else moveSeek(dir*5);
+    }
+  });
+}
+wireDial(volumeDial,'volume'); wireDial(tuneDial,'seek');
+
+$('power').addEventListener('click',()=>setPower(!powerOn));
+$('pilot').addEventListener('click',togglePlay);
+play.addEventListener('click',togglePlay);
+$('back').addEventListener('click',previousTrack);
+$('next').addEventListener('click',()=>nextTrack(true));
+list.addEventListener('click',()=>setPlaylistOpen(!playlistOpen));
+$('mute').addEventListener('click',()=>{
+  if(!powerOn)return;
+  if(!muted && volume>0) volumeBeforeMute=volume;
+  muted=!muted;
+  if(!muted&&volume===0)setVolume(volumeBeforeMute||.7);
+  else setVolume(muted?0:volumeBeforeMute);
+});
+$('shuffle').addEventListener('click',()=>{
+  shuffleOn=!shuffleOn;$('shuffle').classList.toggle('selected',shuffleOn);
+  $('shuffle').setAttribute('aria-pressed',String(shuffleOn));
+  $('shuffle').title=shuffleOn?'Случайный порядок включен':'Случайный порядок';
+});
+$('repeat').addEventListener('click',()=>{
+  repeatOn=!repeatOn;$('repeat').classList.toggle('selected',repeatOn);
+  $('repeat').setAttribute('aria-pressed',String(repeatOn));
+  $('repeat').title=repeatOn?'Повтор песни включен':'Повтор песни';
+});
+seek.addEventListener('input',()=>setSeekPercent(Number(seek.value)));
+audio.addEventListener('timeupdate',refreshSeek);
+audio.addEventListener('durationchange',refreshSeek);
+audio.addEventListener('play',syncPlay);
+audio.addEventListener('pause',syncPlay);
+audio.addEventListener('ended',()=>{
+  if(repeatOn) {audio.currentTime=0;playAudio();}
+  else nextTrack(true);
+});
+audio.addEventListener('error',()=>{ if(requestedPlayback) status('Файл не найден — добавь MP3 рядом с HTML'); });
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&playlistOpen)setPlaylistOpen(false);
+  if(e.code==='Space'&&e.target===document.body){e.preventDefault();togglePlay();}
+});
+renderList();
+setVolume(volume);
+if(TRACKS.length)loadTrack(0,false);
+else {song.textContent='Добавь песни в TRACKS';$('liveBadge').textContent='00 / 00';}
+setPower(true);syncPlay();meterLoop();
+</script>
+</body>
+</html>
