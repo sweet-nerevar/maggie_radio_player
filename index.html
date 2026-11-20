@@ -147,7 +147,12 @@ button:focus-visible, input:focus-visible, [role="slider"]:focus-visible {
 #radio.power-off #display { filter:brightness(.32); }
 #radio.power-off .meter-glow { opacity:0; }
 #radio.power-off #song { color:#8c8064; }
-@media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; } }
+/* Decorative meter glow stays animated without redirecting sound through Web Audio. */
+#radio.is-playing #meterL { animation: vuLeft 1.25s ease-in-out infinite alternate; }
+#radio.is-playing #meterR { animation: vuRight .95s ease-in-out infinite alternate; }
+@keyframes vuLeft { from { opacity:.10; } to { opacity:.33; } }
+@keyframes vuRight { from { opacity:.07; } to { opacity:.25; } }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; animation:none !important; } }
 </style>
 </head>
 <body>
@@ -217,8 +222,7 @@ const volumeDial = $('volumeDial'), tuneDial = $('tuneDial');
 const clamp = (v,a,b) => Math.min(b, Math.max(a,v));
 let currentIndex=0, volume=.78, muted=false, powerOn=true;
 let shuffleOn=false, repeatOn=false, playlistOpen=false, loadVersion=0;
-let volumeBeforeMute=.78, statusTimer=null, analyser=null, audioContext=null, sourceNode=null;
-let meterFrame=0, lastGlow=0, requestedPlayback=false;
+let volumeBeforeMute=.78, statusTimer=null, requestedPlayback=false;
 
 function fit() {
   const scale = Math.min(viewport.clientWidth/WIDTH, viewport.clientHeight/HEIGHT);
@@ -309,41 +313,19 @@ function syncPlay() {
   play.classList.toggle('active',playing);
   syncList();
 }
-async function ensureAnalyser() {
-  if(audioContext || !window.AudioContext) return;
-  try {
-    audioContext=new AudioContext();
-    sourceNode=audioContext.createMediaElementSource(audio);
-    analyser=audioContext.createAnalyser();analyser.fftSize=256;
-    sourceNode.connect(analyser);analyser.connect(audioContext.destination);
-  } catch(e) { analyser=null; }
-}
-function meterLoop() {
-  cancelAnimationFrame(meterFrame);
-  const values=new Uint8Array(128);
-  function frame(){
-    if(analyser && powerOn && !audio.paused) {
-      analyser.getByteFrequencyData(values);
-      const average=values.reduce((a,b)=>a+b,0)/values.length/255;
-      const goal=Math.min(.65,.1+average*.6);
-      lastGlow=lastGlow*.85+goal*.15;
-    } else lastGlow*=.88;
-    $('meterL').style.setProperty('--intensity',String(lastGlow));
-    $('meterR').style.setProperty('--intensity',String(lastGlow*.9));
-    meterFrame=requestAnimationFrame(frame);
-  }
-  frame();
-}
+/* In an embedded tldraw iframe, media must play directly through the HTMLAudioElement.
+   A Web Audio MediaElementSource can be suspended by iframe restrictions and silence
+   the element even though its playback position continues to advance. */
 async function playAudio(version=loadVersion) {
   requestedPlayback=true;
   if(!powerOn) {status('Сначала включи радио');return;}
   if(!TRACKS.length) {status('Добавь песни в TRACKS');return;}
-  await ensureAnalyser();
-  if(audioContext?.state==='suspended') await audioContext.resume().catch(()=>{});
+  // Do not await anything before play(): this must run in the same click gesture
+  // to satisfy embedded iframe autoplay policies.
   try { await audio.play(); if(version===loadVersion)status(''); }
   catch(e) {
     if(version!==loadVersion || e.name==='AbortError')return;
-    status(e.name==='NotAllowedError'?'Нажми ▶ для запуска':'Проверь ссылку на аудиофайл');
+    status(e.name==='NotAllowedError'?'Нажми ▶ внутри радио после открытия в tldraw':'Проверь ссылку на аудиофайл');
     syncPlay();
   }
 }
@@ -476,7 +458,7 @@ renderList();
 setVolume(volume);
 if(TRACKS.length)loadTrack(0,false);
 else {song.textContent='Добавь песни в TRACKS';$('liveBadge').textContent='00 / 00';}
-setPower(true);syncPlay();meterLoop();
+setPower(true);syncPlay();
 </script>
 </body>
 </html>
